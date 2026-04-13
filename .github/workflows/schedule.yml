@@ -1,0 +1,52 @@
+name: Numbers Protocol Audit Agent
+
+on:
+  schedule:
+    # Runs 3x daily — 9AM, 3PM, 9PM UTC
+    # Each run deploys a fresh unique agent identity
+    - cron: "0 9,15,21 * * *"
+
+  # Allow manual trigger from GitHub Actions tab
+  workflow_dispatch:
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write # needed to commit registry.json back to repo
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run audit agent
+        env:
+          CAPTURE_TOKEN: ${{ secrets.CAPTURE_TOKEN }}
+          CAPTURE_WALLET: ${{ secrets.CAPTURE_WALLET }}
+          # AGENT_NID intentionally unset — fresh unique agent each run
+        run: python main.py --auto
+
+      - name: Commit registry update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add registry.json
+          git diff --staged --quiet || git commit -m "chore: update agent registry [run #${{ github.run_number }}]"
+          git push
+
+      - name: Upload audit log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-log-${{ github.run_number }}
+          path: logs/*.log
+          retention-days: 30
